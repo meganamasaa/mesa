@@ -488,9 +488,10 @@ export default function App() {
           </div>
         </section>
 
-        {/* Assign grid (v3: always shared, select who) */}
+        {/* Assign grid (receipt-style checkboxes) */}
         <section className="section">
           <h2 className="h2">Assign</h2>
+
           <div className="scroll-x">
             <table className="assign-table">
               <thead className="assign-thead">
@@ -499,19 +500,17 @@ export default function App() {
                   <th className="th">Price</th>
                   <th className="th">Qty</th>
                   {people.map((p) => (
-                    <th key={p.id} className="th">
-                      {p.name}
-                    </th>
+                    <th key={p.id} className="th">{p.name}</th>
                   ))}
                 </tr>
               </thead>
+
               <tbody>
                 {items.map((it) => (
-                  <tr key={it.id} className="assign-row-border">
+                  <tr key={it.id}>
                     <td className="td">
                       <div style={{ fontWeight: 600 }}>{it.name}</div>
 
-                      {/* quick actions */}
                       <div style={{ display: "inline-flex", gap: 8, marginTop: 6 }}>
                         <button
                           className="link-btn"
@@ -546,33 +545,24 @@ export default function App() {
                           None
                         </button>
                         {it.assignments.length === 0 && (
-                          <span style={{ fontSize: 12, color: "#fbbf24" }}>
-                            Select who shared this ↑
-                          </span>
+                          <span className="hint">Select who shared this ↑</span>
                         )}
                       </div>
                     </td>
 
-                    {/* show unit price as entered (for readability) */}
                     <td className="td">{money(it.price, bill.currency)}</td>
                     <td className="td">x{it.quantity}</td>
 
                     {people.map((p) => {
                       const active = it.assignments.some((a) => a.personId === p.id);
                       return (
-                        <td key={p.id} className="td">
-                          <button
-                            className="mini-btn"
-                            style={{
-                              background: active ? "rgba(255,255,255,0.2)" : "transparent",
-                              borderColor: active
-                                ? "rgba(255,255,255,0.45)"
-                                : "rgba(255,255,255,0.25)",
-                            }}
-                            onClick={() => toggleAssign(it.id, p.id)}
-                          >
-                            {active ? "Assigned" : "Assign"}
-                          </button>
+                        <td key={p.id} className="td" style={{ textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            className="assign-checkbox"
+                            checked={active}
+                            onChange={() => toggleAssign(it.id, p.id)}
+                          />
                         </td>
                       );
                     })}
@@ -582,13 +572,14 @@ export default function App() {
             </table>
           </div>
 
-          {/* Validation banner if some items unallocated */}
           {invalidCount > 0 && (
             <div className="banner-warn">
-              ⚠ Some items have no people selected ({invalidUnshared}). Totals may be off until all items are allocated.
+              ⚠ Some items have no people selected ({invalidUnshared}). Totals may be off
+              until all items are allocated.
             </div>
           )}
         </section>
+
 
         {/* Settlement */}
         <section className="section">

@@ -40,3 +40,23 @@
 .read-the-docs {
   color: #888;
 }
+/* === Receipt-style checkboxes for Assign grid === */
+.assign-checkbox {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--ink);
+  background: transparent;
+  display: grid;
+  place-content: center;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+.assign-checkbox:checked::after {
+  content: "✗";
+  font-size: 13px;
+  color: var(--ink);
+}
+.assign-checkbox:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
