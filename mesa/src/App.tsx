@@ -31,6 +31,62 @@ const fromCents = (c: Cents): number => c / 100;
 const fmt = (c: Cents, currency: Currency = "EUR") =>
   new Intl.NumberFormat(undefined, { style: "currency", currency }).format(fromCents(c));
 
+// === Live USD conversion (hourly) ===
+// === Live USD conversion (hourly) — using open.er-api.com (no API key required) ===
+function useUsdRate(base: Currency) {
+  const [rate, setRate] = React.useState<number | null>(base === "USD" ? 1 : null);
+  const [updatedAt, setUpdatedAt] = React.useState<Date | null>(null);
+  const [status, setStatus] = React.useState<"idle" | "loading" | "ok" | "error">("idle");
+  const baseRef = React.useRef<Currency>(base);
+
+  // Fetch the live exchange rate for this base currency → USD
+  const fetchRate = React.useCallback(async () => {
+    setStatus("loading");
+
+    // trivial case
+    if (base === "USD") {
+      setRate(1);
+      setUpdatedAt(new Date());
+      baseRef.current = base;
+      setStatus("ok");
+      return;
+    }
+
+    try {
+      const url = `https://open.er-api.com/v6/latest/${encodeURIComponent(base)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      // "result": "success" → valid data
+      if (data?.result !== "success" || !data?.rates?.USD) throw new Error("Invalid response");
+
+      const next = Number(data.rates.USD);
+      if (!Number.isFinite(next) || next <= 0) throw new Error("Bad rate");
+
+      setRate(next);
+      setUpdatedAt(new Date());
+      baseRef.current = base;
+      setStatus("ok");
+    } catch (err) {
+      console.error("FX fetch failed:", err);
+      setStatus("error");
+      if (baseRef.current !== base) setRate(null);
+    }
+  }, [base]);
+
+  // Auto-refresh every hour, and whenever base changes
+  React.useEffect(() => {
+    if (base !== "USD") setRate(null);
+    fetchRate();
+    const timer = window.setInterval(fetchRate, 60 * 60 * 1000); // every hour
+    return () => window.clearInterval(timer);
+  }, [base, fetchRate]);
+
+  return { rateToUSD: rate, updatedAt, status, refresh: fetchRate };
+}
+
+
 /* ========= Core math in cents ========= */
 /** Compute per-person pre-extras totals and items subtotal, in cents. */
 function computePerPersonPreExtrasCents(people: Person[], items: Item[]) {
@@ -236,6 +292,20 @@ export default function App() {
     () => itemsSubtotalC - allocatedFoodC,
     [itemsSubtotalC, allocatedFoodC]
   );
+
+    // Live USD rate for the currently selected bill currency
+  const { rateToUSD, updatedAt, status: fxStatus } = useUsdRate(bill.currency);
+
+  // Convert cents in current currency -> USD cents (round safely)
+  const toUsdCents = React.useCallback(
+    (cents: number) => {
+      if (!rateToUSD) return null;
+      // cents_in_usd = round(cents * rate)
+      return Math.round(cents * rateToUSD);
+    },
+    [rateToUSD]
+  );
+
 
   function copySummary() {
     const lines = [
@@ -469,21 +539,58 @@ export default function App() {
               </div>
             </div>
 
+            {/* === Bill summary with USD conversion === */}
             <div className="summary-box" style={{ marginTop: 12 }}>
+              {/* Items subtotal */}
               <div className="row-line">
                 <span>Items subtotal</span>
-                <strong>{fmt(itemsSubtotalC, bill.currency)}</strong>
+                <div style={{ textAlign: "right" }}>
+                  <strong>{fmt(itemsSubtotalC, bill.currency)}</strong>
+                  {toUsdCents(itemsSubtotalC) !== null && bill.currency !== "USD" && (
+                    <div className="fx-hint">≈ {fmt(toUsdCents(itemsSubtotalC)!, "USD")} USD</div>
+                  )}
+                </div>
               </div>
+
+              {/* Tax + Tip */}
               <div className="row-line">
                 <span>Tax + Tip</span>
-                <strong>
-                  {fmt(toCents(bill.tax || 0) + toCents(bill.tip || 0), bill.currency)}
-                </strong>
+                <div style={{ textAlign: "right" }}>
+                  <strong>
+                    {fmt(toCents(bill.tax || 0) + toCents(bill.tip || 0), bill.currency)}
+                  </strong>
+                  {toUsdCents(toCents((bill.tax || 0) + (bill.tip || 0))) !== null &&
+                    bill.currency !== "USD" && (
+                      <div className="fx-hint">
+                        ≈ {fmt(toUsdCents(toCents((bill.tax || 0) + (bill.tip || 0)))!, "USD")} USD
+                      </div>
+                    )}
+                </div>
               </div>
+
+              {/* Grand total */}
               <div className="row-line" style={{ marginTop: 6, fontWeight: 700 }}>
                 <span>Total</span>
-                <strong>{fmt(billTotalC, bill.currency)}</strong>
+                <div style={{ textAlign: "right" }}>
+                  <strong>{fmt(billTotalC, bill.currency)}</strong>
+                  {toUsdCents(billTotalC) !== null && bill.currency !== "USD" && (
+                    <div className="fx-hint">≈ {fmt(toUsdCents(billTotalC)!, "USD")} USD</div>
+                  )}
+                </div>
               </div>
+
+              {/* Small FX status line */}
+              {bill.currency !== "USD" && (
+                <div className="hint" style={{ marginTop: 6 }}>
+                  FX:{" "}
+                  {fxStatus === "loading"
+                    ? "Updating…"
+                    : fxStatus === "error"
+                    ? "Using last known rate (update failed)"
+                    : "Live"}
+                  {updatedAt && ` • ${updatedAt.toLocaleTimeString()}`}
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -584,14 +691,24 @@ export default function App() {
         {/* Settlement */}
         <section className="section">
           <h2 className="h2">Settlement</h2>
-          <ul style={{ listStyle: "none", padding: 0, marginTop: 8 }}>
-            {people.map((p) => (
-              <li key={p.id} className="row-line">
-                <span>{p.name}</span>
-                <strong>{fmt(totalsByPersonC[p.id] ?? 0, bill.currency)}</strong>
-              </li>
-            ))}
-          </ul>
+            {/* === Settlement with USD equivalents === */}
+            <ul style={{ listStyle: "none", padding: 0, marginTop: 8 }}>
+              {people.map((p) => {
+                const owedC = totalsByPersonC[p.id] ?? 0;
+                const owedUsdC = toUsdCents(owedC);
+                return (
+                  <li key={p.id} className="row-line">
+                    <span>{p.name}</span>
+                    <div style={{ textAlign: "right" }}>
+                      <strong>{fmt(owedC, bill.currency)}</strong>
+                      {owedUsdC !== null && bill.currency !== "USD" && (
+                        <div className="fx-hint">≈ {fmt(owedUsdC, "USD")} USD</div>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
 
           {/* Allocation validation readout (food only) */}
           <div
