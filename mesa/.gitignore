@@ -37,3 +37,4 @@ Thumbs.db
 # Optional — test coverage or cache dirs (if you add testing later)
 coverage/
 .cache/
+.vercel
