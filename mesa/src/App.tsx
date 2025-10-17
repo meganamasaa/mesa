@@ -305,24 +305,42 @@ export default function App() {
     },
     [rateToUSD]
   );
+  // Format for clipboard: always show USD first if rate exists.
+  // Example: "$24.01 (€35.00)" or "$18.25 (£14.80)"
+  const usdFirst = (
+    cents: Cents,
+    currency: Currency,
+    toUsd: (c: Cents) => number | null
+  ) => {
+    const usdC = toUsd(cents);
+
+    // if we have a conversion rate and base isn't USD
+    if (usdC !== null && currency !== "USD") {
+      return `${fmt(usdC, "USD")} (${fmt(cents, currency)})`;
+    }
+
+    // default fallback (either USD base or no rate yet)
+    return fmt(cents, currency);
+  };
 
 
   function copySummary() {
+    const taxPlusTipC = toCents(bill.tax || 0) + toCents(bill.tip || 0);
+  
     const lines = [
-      `Items subtotal: ${fmt(itemsSubtotalC, bill.currency)}`,
-      `Tax: ${fmt(toCents(bill.tax || 0), bill.currency)} | Tip: ${fmt(
-        toCents(bill.tip || 0),
-        bill.currency
-      )} | Mode: ${extrasMode}`,
-      `Total: ${fmt(billTotalC, bill.currency)}`,
+      `Items subtotal: ${usdFirst(itemsSubtotalC, bill.currency, toUsdCents)}`,
+      `Tax + Tip: ${usdFirst(taxPlusTipC, bill.currency, toUsdCents)} | Mode: ${extrasMode}`,
+      `Total: ${usdFirst(billTotalC, bill.currency, toUsdCents)}`,
       invalidCount
         ? `⚠ Unallocated items: ${invalidCount} (no people selected: ${invalidUnshared})`
         : "✅ All items allocated",
       "",
-      ...people.map(
-        (p) => `${p.name}: ${fmt(totalsByPersonC[p.id] ?? 0, bill.currency)}`
-      ),
+      ...people.map((p) => {
+        const owedC = totalsByPersonC[p.id] ?? 0;
+        return `${p.name}: ${usdFirst(owedC, bill.currency, toUsdCents)}`;
+      }),
     ];
+  
     navigator.clipboard.writeText(lines.join("\n")).catch(() => {});
   }
 
@@ -710,18 +728,18 @@ export default function App() {
               })}
             </ul>
 
-          {/* Allocation validation readout (food only) */}
+          {/* Allocation validation readout  */}
           <div
             style={{
               marginTop: 8,
               fontSize: 13,
-              color: Math.abs(allocationDeltaC) < 1 ? "#86efac" : "#fde68a", // <1 cent ~ OK
+              color: Math.abs(allocationDeltaC) < 1 ? "#228B22" : "#fde68a", // <1 cent ~ OK
             }}
           >
             {Math.abs(allocationDeltaC) < 1 ? (
-              <>Allocation check (food only): allocated {fmt(allocatedFoodC, bill.currency)} of {fmt(itemsSubtotalC, bill.currency)} ✅</>
+              <>Allocation check: allocated {fmt(allocatedFoodC, bill.currency)} of {fmt(itemsSubtotalC, bill.currency)} ✅</>
             ) : (
-              <>Allocation check (food only): allocated {fmt(allocatedFoodC, bill.currency)} of {fmt(itemsSubtotalC, bill.currency)} — off by {fmt(allocationDeltaC, bill.currency)} ⚠</>
+              <>Allocation check : allocated {fmt(allocatedFoodC, bill.currency)} of {fmt(itemsSubtotalC, bill.currency)} — off by {fmt(allocationDeltaC, bill.currency)} ⚠</>
             )}
           </div>
 
